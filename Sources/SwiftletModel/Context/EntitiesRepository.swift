@@ -43,9 +43,9 @@ extension EntitiesRepository {
 extension EntitiesRepository {
     mutating func remove<T: EntityModelProtocol>(_ entityType: T.Type, id: T.ID) {
         let key = EntityName(reflecting: T.self)
-        var storage = storages[key] ?? [:]
-        storage.removeValue(forKey: id.description)
-        storages[key] = storage
+        // In-place mutation via optional-chaining keeps the inner dictionary uniquely
+        // referenced during the modify, avoiding a full O(n) copy-on-write of the storage.
+        storages[key]?.removeValue(forKey: id.description)
     }
 
     mutating func removeAll<T: EntityModelProtocol>(_ entityType: T.Type, ids: [T.ID]) {
@@ -54,18 +54,13 @@ extension EntitiesRepository {
 
     mutating func insert<T: EntityModelProtocol>(_ entity: T, options: MergeStrategy<T>) {
         let key = String(reflecting: T.self)
-        var storage = storages[key] ?? [:]
-
         guard let existing: T = find(entity.id) else {
-            storage[entity.id.description] = entity
-            storages[key] = storage
+            storages[key, default: [:]][entity.id.description] = entity
             return
         }
 
         let merged = options.merge(existing, new: entity)
-
-        storage[entity.id.description] = merged
-        storages[key] = storage
+        storages[key, default: [:]][entity.id.description] = merged
     }
 
     mutating func insert<T: EntityModelProtocol>(_ entity: T?, options: MergeStrategy<T>) {
