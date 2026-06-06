@@ -85,21 +85,21 @@ private extension Index.HashableValue {
             _remove(entity)
         }
 
-        var entities = index[value] ?? []
-        entities.insert(entity.id)
-        index[value] = entities
+        index[value, default: []].insert(entity.id)
         indexedValues[entity.id] = value
     }
 
     func _remove(_ entity: Entity) {
         guard let value = indexedValues[entity.id],
-              var ids = index[value]
+              index[value] != nil
         else {
             return
         }
 
         indexedValues[entity.id] = nil
-        ids.remove(entity.id)
-        index[value] = ids.isEmpty ? nil : ids
+        index[value]?.remove(entity.id)
+        if index[value]?.isEmpty == true {
+            index[value] = nil
+        }
     }
 }
