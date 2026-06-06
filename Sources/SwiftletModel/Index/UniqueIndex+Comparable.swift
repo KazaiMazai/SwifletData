@@ -9,12 +9,13 @@ import Foundation
 import BTree
 
 extension Unique {
-    @EntityModel
-    struct ComparableValue<Value: Comparable & Sendable> {
+    @EntityRefModel
+    final class ComparableValue<Value: Comparable & Sendable>: @unchecked Sendable {
+        typealias `Self` = Unique.ComparableValue<Value>
         var id: String { name }
 
         let name: String
-
+        private let lock = NSLock()
         private var index: Map<Value, Entity.ID> = [:]
         private var indexedValues: [Entity.ID: Value] = [:]
 
@@ -54,7 +55,7 @@ extension Unique.ComparableValue {
                                 _ entity: Entity,
                                 in context: inout Context) throws {
 
-        var index = Query<Self>(id: indexName).resolve(in: context)
+        let index = Query<Self>(id: indexName).resolve(in: context)
         index?.remove(entity)
         try index?.save(to: &context)
     }
@@ -65,15 +66,31 @@ private extension Unique.ComparableValue {
                             value: Value,
                             in context: inout Context,
                             resolveCollisions resolver: CollisionResolver<Entity>) throws {
-        guard let existingId = index[value], existingId != entity.id else {
+        // Read under the lock, but call the resolver outside it: the resolver can re-enter
+        // (e.g. save another entity → updateIndex on this same instance), and NSLock isn't recursive.
+        let existingId = lock.withLock { index[value] }
+        guard let existingId, existingId != entity.id else {
             return
         }
 
         try resolver.resolveCollision(existing: existingId, new: entity, indexName: name, in: &context)
     }
 
-    mutating func update(_ entity: Entity,
-                         value: Value) {
+    func update(_ entity: Entity, value: Value) {
+        lock.withLock {
+            _update(entity, value: value)
+        }
+    }
+
+    func remove(_ entity: Entity) {
+        lock.withLock {
+            _remove(entity)
+        }
+    }
+}
+
+private extension Unique.ComparableValue {
+    func _update(_ entity: Entity, value: Value) {
         let existingValue = indexedValues[entity.id]
 
         guard existingValue != value else {
@@ -88,7 +105,7 @@ private extension Unique.ComparableValue {
         indexedValues[entity.id] = value
     }
 
-    mutating func remove(_ entity: Entity) {
+    func _remove(_ entity: Entity) {
         guard let value = indexedValues[entity.id],
               index[value] != nil
         else {
