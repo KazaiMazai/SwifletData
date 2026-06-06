@@ -9,13 +9,12 @@ import Foundation
 import BTree
 
 extension Unique {
-    @EntityRefModel
-    final class ComparableValue<Value: Comparable & Sendable>: @unchecked Sendable {
-        typealias `Self` = Unique.ComparableValue<Value>
+    @EntityModel
+    struct ComparableValue<Value: Comparable & Sendable>: Sendable {
         var id: String { name }
 
         let name: String
-        private let lock = NSLock()
+
         private var index: Map<Value, Entity.ID> = [:]
         private var indexedValues: [Entity.ID: Value] = [:]
 
@@ -44,20 +43,26 @@ extension Unique.ComparableValue {
                             in context: inout Context,
                             resolveCollisions resolver: CollisionResolver<Entity>) throws {
 
-        var index = Query(id: indexName).resolve(in: context) ?? Self(name: indexName)
-        try index.checkForCollisions(entity, value: value, in: &context, resolveCollisions: resolver)
-        index = index.query().resolve(in: context) ?? index
-        index.update(entity, value: value)
-        try index.save(to: &context)
+        /**
+         Resolve a read-only copy to check for collisions first: the resolver may re-entrantly
+         mutate the context (and this very index). Then apply the update in place, which re-reads
+         the (possibly resolver-updated) index from storage — replacing the old re-resolve dance.
+        */
+        try Query<Self>(id: indexName).resolve(in: context)?
+            .checkForCollisions(entity, value: value, in: &context, resolveCollisions: resolver)
+
+        context.mutate(indexName, default: { Self(name: indexName) }) { index in
+            index.update(entity, value: value)
+        }
     }
 
     static func removeFromIndex(indexName: String,
                                 _ entity: Entity,
                                 in context: inout Context) throws {
 
-        let index = Query<Self>(id: indexName).resolve(in: context)
-        index?.remove(entity)
-        try index?.save(to: &context)
+        context.mutateIfPresent(indexName) { (index: inout Self) in
+            index.remove(entity)
+        }
     }
 }
 
@@ -66,31 +71,15 @@ private extension Unique.ComparableValue {
                             value: Value,
                             in context: inout Context,
                             resolveCollisions resolver: CollisionResolver<Entity>) throws {
-        // Read under the lock, but call the resolver outside it: the resolver can re-enter
-        // (e.g. save another entity → updateIndex on this same instance), and NSLock isn't recursive.
-        let existingId = lock.withLock { index[value] }
-        guard let existingId, existingId != entity.id else {
+        guard let existingId = index[value], existingId != entity.id else {
             return
         }
 
         try resolver.resolveCollision(existing: existingId, new: entity, indexName: name, in: &context)
     }
 
-    func update(_ entity: Entity, value: Value) {
-        lock.withLock {
-            _update(entity, value: value)
-        }
-    }
-
-    func remove(_ entity: Entity) {
-        lock.withLock {
-            _remove(entity)
-        }
-    }
-}
-
-private extension Unique.ComparableValue {
-    func _update(_ entity: Entity, value: Value) {
+    mutating func update(_ entity: Entity,
+                         value: Value) {
         let existingValue = indexedValues[entity.id]
 
         guard existingValue != value else {
@@ -105,7 +94,7 @@ private extension Unique.ComparableValue {
         indexedValues[entity.id] = value
     }
 
-    func _remove(_ entity: Entity) {
+    mutating func remove(_ entity: Entity) {
         guard let value = indexedValues[entity.id],
               index[value] != nil
         else {

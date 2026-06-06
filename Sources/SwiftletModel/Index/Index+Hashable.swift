@@ -7,13 +7,12 @@
 import Foundation
 
 extension Index {
-    @EntityRefModel
-    final class HashableValue<Value: Hashable & Sendable>: @unchecked Sendable {
-        typealias `Self` = Index.HashableValue<Value>
+    @EntityModel
+    struct HashableValue<Value: Hashable & Sendable> {
         var id: String { name }
 
         let name: String
-        private let lock = NSLock()
+
         private var index: [Value: Set<Entity.ID>] = [:]
         private var indexedValues: [Entity.ID: Value] = [:]
 
@@ -35,46 +34,29 @@ extension Index.HashableValue {
                             value: Value,
                             in context: inout Context) throws {
 
-        let index = Query(id: indexName).resolve(in: context) ?? Self(name: indexName)
-        index.update(entity, value: value)
-        try index.save(to: &context)
+        context.mutate(indexName, default: { Self(name: indexName) }) { index in
+            index.update(entity, value: value)
+        }
     }
 
     static func removeFromIndex(indexName: String,
                                 _ entity: Entity,
                                 in context: inout Context) throws {
 
-        guard let index = Query<Self>(id: indexName).resolve(in: context) else {
-            return
+        context.mutateIfPresent(indexName) { (index: inout Self) in
+            index.remove(entity)
         }
-
-        index.remove(entity)
-        try index.save(to: &context)
     }
 
     func find(_ value: Value) -> Set<Entity.ID> {
-        lock.withLock {
-            index[value] ?? []
-        }
+        index[value] ?? []
     }
 }
 
 private extension Index.HashableValue {
-    func update(_ entity: Entity, value: Value) {
-        lock.withLock {
-            _update(entity, value: value)
-        }
-    }
 
-    func remove(_ entity: Entity) {
-        lock.withLock {
-            _remove(entity)
-        }
-    }
-}
-
-private extension Index.HashableValue {
-    func _update(_ entity: Entity, value: Value) {
+    mutating func update(_ entity: Entity,
+                         value: Value) {
         let existingValue = indexedValues[entity.id]
 
         guard existingValue != value else {
@@ -82,14 +64,14 @@ private extension Index.HashableValue {
         }
 
         if let existingValue, index[existingValue] != nil {
-            _remove(entity)
+            remove(entity)
         }
 
         index[value, default: []].insert(entity.id)
         indexedValues[entity.id] = value
     }
 
-    func _remove(_ entity: Entity) {
+    mutating func remove(_ entity: Entity) {
         guard let value = indexedValues[entity.id],
               index[value] != nil
         else {
