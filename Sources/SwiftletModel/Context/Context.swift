@@ -66,6 +66,23 @@ public extension Context {
 }
 
 extension Context {
+    mutating func mutate<T: EntityModelProtocol>(
+        _ id: T.ID,
+        default makeDefault: () -> T,
+        _ body: (inout T) -> Void
+    ) {
+        entitiesRepository.mutate(id, default: makeDefault, body)
+    }
+
+    mutating func mutateIfPresent<T: EntityModelProtocol>(
+        _ id: T.ID,
+        _ body: (inout T) -> Void
+    ) {
+        entitiesRepository.mutateIfPresent(id, body)
+    }
+}
+
+extension Context {
     func query<Entity: EntityModelProtocol>(_ id: Entity.ID) -> Query<Entity> {
         Query(id: id)
     }
