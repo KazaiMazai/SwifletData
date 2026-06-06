@@ -8,15 +8,17 @@
 import Foundation
 
 extension FullTextIndex {
-    @EntityModel
-    struct HashableValue<Value: Hashable & Sendable> {
+    @EntityRefModel
+    final class HashableValue<Value: Hashable & Sendable>: @unchecked Sendable {
         // swiftlint:disable:next nesting
         typealias Token = String
+        typealias `Self` = FullTextIndex.HashableValue<Value>
 
         var id: String { name }
 
         let name: String
 
+        private let lock = NSLock()
         private var index: [Token: Set<Entity.ID>] = [:]
 
         private var indexedValues: [Entity.ID: Value] = [:]
@@ -47,6 +49,35 @@ extension FullTextIndex.HashableValue {
     // Constants for BM25 ranking
 
     func search(_ value: String) -> [Entity.ID] {
+        lock.withLock {
+            _search(value)
+        }
+    }
+}
+
+extension FullTextIndex.HashableValue {
+    static func updateIndex(indexName: String,
+                            _ entity: Entity,
+                            value: Value,
+                            in context: inout Context) throws {
+
+        let index = Query(id: indexName).resolve(in: context) ?? Self(name: indexName)
+        index.update(entity, value: value)
+        try index.save(to: &context)
+    }
+
+    static func removeFromIndex(indexName: String,
+                                _ entity: Entity,
+                                in context: inout Context) throws {
+
+        let index = Query<Self>(id: indexName).resolve(in: context)
+        index?.remove(entity)
+        try index?.save(to: &context)
+    }
+}
+
+private extension FullTextIndex.HashableValue {
+    func _search(_ value: String) -> [Entity.ID] {
         let tokens = value.makeTokens()
         var scores: [Entity.ID: Double] = [:]
 
@@ -74,33 +105,22 @@ extension FullTextIndex.HashableValue {
 
         return scores.sorted { $0.value > $1.value }.map { $0.key }
     }
-}
 
-extension FullTextIndex.HashableValue {
-    static func updateIndex(indexName: String,
-                            _ entity: Entity,
-                            value: Value,
-                            in context: inout Context) throws {
-
-        var index = Query(id: indexName).resolve(in: context) ?? Self(name: indexName)
-        index.update(entity, value: value)
-        try index.save(to: &context)
+    func update(_ entity: Entity, value: Value) {
+        lock.withLock {
+            _update(entity, value: value)
+        }
     }
 
-    static func removeFromIndex(indexName: String,
-                                _ entity: Entity,
-                                in context: inout Context) throws {
-
-        var index = Query<Self>(id: indexName).resolve(in: context)
-        index?.remove(entity)
-        try index?.save(to: &context)
+    func remove(_ entity: Entity) {
+        lock.withLock {
+            _remove(entity)
+        }
     }
 }
 
-private  extension FullTextIndex.HashableValue {
-    mutating func update(_ entity: Entity,
-                         value: Value) {
-
+private extension FullTextIndex.HashableValue {
+    func _update(_ entity: Entity, value: Value) {
         let existingValue = indexedValues[entity.id]
 
         guard existingValue != value else {
@@ -108,14 +128,12 @@ private  extension FullTextIndex.HashableValue {
         }
 
         if existingValue != nil {
-            remove(entity)
+            _remove(entity)
         }
 
         let tokens = makeTokens(for: value)
         tokens.forEach { token in
-            var ids = index[token] ?? []
-            ids.insert(entity.id)
-            index[token] = ids
+            index[token, default: []].insert(entity.id)
         }
 
         totalLengthSum += tokens.count
@@ -128,15 +146,16 @@ private  extension FullTextIndex.HashableValue {
         averageValueLength = Double(totalLengthSum) / Double(max(1, entitiesCount))
     }
 
-    mutating func remove(_ entity: Entity) {
+    func _remove(_ entity: Entity) {
         guard let tokens = tokensForEntities[entity.id]
          else {
             return
         }
         tokens.forEach { token in
-            var ids = index[token] ?? []
-            ids.remove(entity.id)
-            index[token] = ids.isEmpty ? nil : ids
+            index[token]?.remove(entity.id)
+            if index[token]?.isEmpty == true {
+                index[token] = nil
+            }
         }
         totalLengthSum -= valueLenghtsForEntities[entity.id] ?? 0
         entitiesCount -= 1
