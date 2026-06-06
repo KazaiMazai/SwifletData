@@ -8,12 +8,13 @@
 import Foundation
 
 extension Unique {
-    @EntityModel
-    struct HashableValue<Value: Hashable & Sendable> {
+    @EntityRefModel
+    final class HashableValue<Value: Hashable & Sendable>: @unchecked Sendable {
+        typealias `Self` = Unique.HashableValue<Value>
         var id: String { name }
 
         let name: String
-
+        private let lock = NSLock()
         private var index: [Value: Entity.ID] = [:]
         private var indexedValues: [Entity.ID: Value] = [:]
 
@@ -53,7 +54,7 @@ extension Unique.HashableValue {
                                 _ entity: Entity,
                                 in context: inout Context) throws {
 
-        guard var index = Query<Self>(id: indexName).resolve(in: context) else {
+        guard let index = Query<Self>(id: indexName).resolve(in: context) else {
             return
         }
 
@@ -67,15 +68,31 @@ private extension Unique.HashableValue {
                             value: Value,
                             in context: inout Context,
                             resolveCollisions resolver: CollisionResolver<Entity>) throws {
-        guard let existingId = index[value], existingId != entity.id else {
+        // Read under the lock, but call the resolver outside it: the resolver can re-enter
+        // (e.g. save another entity → updateIndex on this same instance), and NSLock isn't recursive.
+        let existingId = lock.withLock { index[value] }
+        guard let existingId, existingId != entity.id else {
             return
         }
 
         try resolver.resolveCollision(existing: existingId, new: entity, indexName: name, in: &context)
     }
 
-    mutating func update(_ entity: Entity,
-                         value: Value) {
+    func update(_ entity: Entity, value: Value) {
+        lock.withLock {
+            _update(entity, value: value)
+        }
+    }
+
+    func remove(_ entity: Entity) {
+        lock.withLock {
+            _remove(entity)
+        }
+    }
+}
+
+private extension Unique.HashableValue {
+    func _update(_ entity: Entity, value: Value) {
         let existingValue = indexedValues[entity.id]
 
         guard existingValue != value else {
@@ -90,7 +107,7 @@ private extension Unique.HashableValue {
         indexedValues[entity.id] = value
     }
 
-    mutating func remove(_ entity: Entity) {
+    func _remove(_ entity: Entity) {
         guard let value = indexedValues[entity.id],
               index[value] != nil
         else {
