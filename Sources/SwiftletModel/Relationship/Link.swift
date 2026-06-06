@@ -96,12 +96,24 @@ extension Link {
         options: UpdateOption
     ) throws {
 
-        try Link<Parent, Child>.updateOneWayLink(
-            parent, children,
-            keyPath: keyPath,
-            in: &context,
-            merge: options.merge
-        )
+        switch options {
+        case .replace, .remove:
+            try Link<Parent, Child>.updateOneWayLink(
+                parent, children,
+                keyPath: keyPath,
+                in: &context,
+                merge: options.merge
+            )
+        case.append where !children.isEmpty:
+            try Link<Parent, Child>.updateOneWayLink(
+                parent, children,
+                keyPath: keyPath,
+                in: &context,
+                merge: options.merge
+            )
+        case .append:
+            break
+        }
     }
 
     // swiftlint:disable:next function_parameter_count
@@ -114,7 +126,7 @@ extension Link {
         options: UpdateOption) throws {
 
             switch options {
-            case .remove:
+            case .remove where !children.isEmpty:
                 try Link<Parent, Child>.updateMutualLink(
                     parent, children,
                     keyPath: keyPath,
@@ -123,7 +135,9 @@ extension Link {
                     directMerge: Link<Parent, Child>.remove,
                     inverseMerge: Link<Child, Parent>.remove
                 )
-            case .append:
+            case .remove:
+                break
+            case .append where !children.isEmpty:
                 try Link<Parent, Child>.updateMutualLink(
                     parent, children,
                     keyPath: keyPath,
@@ -132,20 +146,24 @@ extension Link {
                     directMerge: Link<Parent, Child>.append,
                     inverseMerge: inverse.valueType.inverseUpdateOption().merge
                 )
+            case .append:
+                break
             case .replace:
                 let childrenSet = Set(children)
                 let oddChildren = Link<Parent, Child>
                     .findChildrenOf(parent, with: keyPath, in: context)
                     .filter { !childrenSet.contains($0) }
 
-                try Link<Parent, Child>.updateMutualLink(
-                    parent, oddChildren,
-                    keyPath: keyPath,
-                    inverse: inverse,
-                    in: &context,
-                    directMerge: Link<Parent, Child>.remove,
-                    inverseMerge: Link<Child, Parent>.remove
-                )
+                if !oddChildren.isEmpty {
+                    try Link<Parent, Child>.updateMutualLink(
+                        parent, oddChildren,
+                        keyPath: keyPath,
+                        inverse: inverse,
+                        in: &context,
+                        directMerge: Link<Parent, Child>.remove,
+                        inverseMerge: Link<Child, Parent>.remove
+                    )
+                }
 
                 try Link<Parent, Child>.updateMutualLink(
                     parent, children,
