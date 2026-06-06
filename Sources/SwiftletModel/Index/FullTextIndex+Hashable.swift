@@ -8,17 +8,15 @@
 import Foundation
 
 extension FullTextIndex {
-    @EntityRefModel
-    final class HashableValue<Value: Hashable & Sendable>: @unchecked Sendable {
+    @EntityModel
+    struct HashableValue<Value: Hashable & Sendable> {
         // swiftlint:disable:next nesting
         typealias Token = String
-        typealias `Self` = FullTextIndex.HashableValue<Value>
 
         var id: String { name }
 
         let name: String
 
-        private let lock = NSLock()
         private var index: [Token: Set<Entity.ID>] = [:]
 
         private var indexedValues: [Entity.ID: Value] = [:]
@@ -49,35 +47,6 @@ extension FullTextIndex.HashableValue {
     // Constants for BM25 ranking
 
     func search(_ value: String) -> [Entity.ID] {
-        lock.withLock {
-            _search(value)
-        }
-    }
-}
-
-extension FullTextIndex.HashableValue {
-    static func updateIndex(indexName: String,
-                            _ entity: Entity,
-                            value: Value,
-                            in context: inout Context) throws {
-
-        let index = Query(id: indexName).resolve(in: context) ?? Self(name: indexName)
-        index.update(entity, value: value)
-        try index.save(to: &context)
-    }
-
-    static func removeFromIndex(indexName: String,
-                                _ entity: Entity,
-                                in context: inout Context) throws {
-
-        let index = Query<Self>(id: indexName).resolve(in: context)
-        index?.remove(entity)
-        try index?.save(to: &context)
-    }
-}
-
-private extension FullTextIndex.HashableValue {
-    func _search(_ value: String) -> [Entity.ID] {
         let tokens = value.makeTokens()
         var scores: [Entity.ID: Double] = [:]
 
@@ -105,22 +74,33 @@ private extension FullTextIndex.HashableValue {
 
         return scores.sorted { $0.value > $1.value }.map { $0.key }
     }
+}
 
-    func update(_ entity: Entity, value: Value) {
-        lock.withLock {
-            _update(entity, value: value)
+extension FullTextIndex.HashableValue {
+    static func updateIndex(indexName: String,
+                            _ entity: Entity,
+                            value: Value,
+                            in context: inout Context) throws {
+
+        context.mutate(indexName, default: { Self(name: indexName) }) { index in
+            index.update(entity, value: value)
         }
     }
 
-    func remove(_ entity: Entity) {
-        lock.withLock {
-            _remove(entity)
+    static func removeFromIndex(indexName: String,
+                                _ entity: Entity,
+                                in context: inout Context) throws {
+
+        context.mutateIfPresent(indexName) { (index: inout Self) in
+            index.remove(entity)
         }
     }
 }
 
 private extension FullTextIndex.HashableValue {
-    func _update(_ entity: Entity, value: Value) {
+    mutating func update(_ entity: Entity,
+                         value: Value) {
+
         let existingValue = indexedValues[entity.id]
 
         guard existingValue != value else {
@@ -128,7 +108,7 @@ private extension FullTextIndex.HashableValue {
         }
 
         if existingValue != nil {
-            _remove(entity)
+            remove(entity)
         }
 
         let tokens = makeTokens(for: value)
@@ -146,7 +126,7 @@ private extension FullTextIndex.HashableValue {
         averageValueLength = Double(totalLengthSum) / Double(max(1, entitiesCount))
     }
 
-    func _remove(_ entity: Entity) {
+    mutating func remove(_ entity: Entity) {
         guard let tokens = tokensForEntities[entity.id]
          else {
             return
