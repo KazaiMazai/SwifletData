@@ -25,14 +25,18 @@ extension EntitiesRepository {
         return storages[entityName]?.compactMap { $0.value as? T } ?? []
     }
 
-    func find<T: EntityModelProtocol>(_ id: T.ID) -> T? {
-        let entityName = EntityName(reflecting: T.self)
+    func find<T: EntityModelProtocol>(_ id: T.ID, entityName: String) -> T? {
         let storage = storages[entityName] ?? [:]
         return storage[id.description] as? T
     }
+    
+    func find<T: EntityModelProtocol>(_ id: T.ID) -> T? {
+         find(id, entityName: EntityName(reflecting: T.self))
+    }
 
     func findAll<T: EntityModelProtocol>(_ ids: [T.ID]) -> [T?] {
-        ids.map { find($0) }
+        let entityName = EntityName(reflecting: T.self)
+        return ids.map { find($0, entityName: entityName) }
     }
 
     func findAllExisting<T: EntityModelProtocol>(_ ids: [T.ID]) -> [T] {
