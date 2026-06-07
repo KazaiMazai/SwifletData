@@ -50,6 +50,9 @@ public protocol EntityModelProtocol: Sendable {
  
 public extension EntityModelProtocol {
 
+    /** The storage key for this entity type. */
+    static var entityName: String { String(reflecting: Self.self) }
+
     static var defaultMergeStrategy: MergeStrategy<Self> { .replace }
 
     static var fragmentMergeStrategy: MergeStrategy<Self> { Self.patch }
