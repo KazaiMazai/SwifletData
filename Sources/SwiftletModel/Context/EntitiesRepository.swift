@@ -8,16 +8,9 @@
 import Foundation
 
 struct EntitiesRepository {
-    typealias EntityName = String
-
-    private var storages: [EntityName: any EntityStorage] = [:]
+    private var storages: [ObjectIdentifier: any EntityStorage] = [:]
 }
 
-/**
- A type-erased box over the per-entity-type storage. Each box wraps a strongly-typed
- `[Entity.ID: Entity]` dictionary, so a lookup casts the whole box once (`as? Storage<T>`)
- instead of doing an `as?` cast per element — which makes bulk reads (`all`, `findAll`) cheaper.
-*/
 protocol EntityStorage: Sendable { }
 
 extension EntitiesRepository {
@@ -30,7 +23,7 @@ extension EntitiesRepository {
 
 extension EntitiesRepository {
     private func storage<T: EntityModelProtocol>(_ type: T.Type) -> Storage<T>? {
-        storages[T.entityName] as? Storage<T>
+        storages[ObjectIdentifier(T.self)] as? Storage<T>
     }
 
     func ids<T: EntityModelProtocol>(_ entityType: T.Type) -> [T.ID] {
@@ -71,19 +64,19 @@ extension EntitiesRepository {
         _ type: T.Type,
         _ body: (inout Storage<T>) -> Void
     ) {
-        let key = T.entityName
+        let key = ObjectIdentifier(T.self)
         var storage = storages.removeValue(forKey: key) as? Storage<T> ?? Storage<T>()
         body(&storage)
         storages[key] = storage
     }
 
     mutating func remove<T: EntityModelProtocol>(_ entityType: T.Type, id: T.ID) {
-        guard storages[T.entityName] != nil else { return }
+        guard storages[ObjectIdentifier(T.self)] != nil else { return }
         withStorage(T.self) { $0.entities[id] = nil }
     }
 
     mutating func removeAll<T: EntityModelProtocol>(_ entityType: T.Type, ids: [T.ID]) {
-        guard storages[T.entityName] != nil else { return }
+        guard storages[ObjectIdentifier(T.self)] != nil else { return }
         withStorage(T.self) { storage in
             ids.forEach { storage.entities[$0] = nil }
         }
@@ -153,7 +146,7 @@ extension EntitiesRepository {
         _ id: T.ID,
         _ body: (inout T) -> Void
     ) {
-        guard storages[T.entityName] != nil else {
+        guard storages[ObjectIdentifier(T.self)] != nil else {
             return
         }
 
