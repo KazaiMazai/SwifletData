@@ -30,7 +30,7 @@ extension EntitiesRepository {
 
 extension EntitiesRepository {
     private func storage<T: EntityModelProtocol>(_ type: T.Type) -> Storage<T>? {
-        storages[String(reflecting: T.self)] as? Storage<T>
+        storages[T.entityName] as? Storage<T>
     }
 
     func ids<T: EntityModelProtocol>(_ entityType: T.Type) -> [T.ID] {
@@ -71,19 +71,19 @@ extension EntitiesRepository {
         _ type: T.Type,
         _ body: (inout Storage<T>) -> Void
     ) {
-        let key = String(reflecting: T.self)
+        let key = T.entityName
         var storage = storages.removeValue(forKey: key) as? Storage<T> ?? Storage<T>()
         body(&storage)
         storages[key] = storage
     }
 
     mutating func remove<T: EntityModelProtocol>(_ entityType: T.Type, id: T.ID) {
-        guard storages[String(reflecting: T.self)] != nil else { return }
+        guard storages[T.entityName] != nil else { return }
         withStorage(T.self) { $0.entities[id] = nil }
     }
 
     mutating func removeAll<T: EntityModelProtocol>(_ entityType: T.Type, ids: [T.ID]) {
-        guard storages[String(reflecting: T.self)] != nil else { return }
+        guard storages[T.entityName] != nil else { return }
         withStorage(T.self) { storage in
             ids.forEach { storage.entities[$0] = nil }
         }
@@ -153,7 +153,7 @@ extension EntitiesRepository {
         _ id: T.ID,
         _ body: (inout T) -> Void
     ) {
-        guard storages[String(reflecting: T.self)] != nil else {
+        guard storages[T.entityName] != nil else {
             return
         }
 
