@@ -13,7 +13,7 @@
 *If CoreData broke up with legacy, embraced modern Swift, and married GraphQL — you'd get SwiftletModel.*
 
 > *SwiftletModel is what you wished SwiftData was — if it were reinvented from scratch.*  
-It gives you CoreData-level graph management power with plain Swift structs, instant speed, and zero boilerplate.
+It gives you CoreData-level graph management power with plain Swift structs, in-memory speed, and zero boilerplate.
 
 **Is it an ORM?** Not exactly. SwiftletModel isn’t a traditional ORM or database layer. It doesn’t abstract SQL or manage disk persistence.  
 
@@ -57,7 +57,7 @@ Here's how to get started fast.
 Using [Swift Package Manager](https://swift.org/package-manager/):
 
 ```swift
-.package(url: "https://github.com/KazaiMazai/SwiftletModel.git", from: "0.0.1")
+.package(url: "https://github.com/KazaiMazai/SwiftletModel.git", from: "0.23.0") //or newer
 ``` 
 
 Or via Xcode:
@@ -190,7 +190,7 @@ Values are **avg ms** (lower is better); `Int` shown for typed reads. **Bold = f
 
 - **Indexed reads win across the board** — `ID lookup` is O(1), and query with `equal` predicate is ~20× faster than SwiftData.
 - **Unindexed writes are the fastest of any engine** — a pure keyed store doing zero index maintenance, ~50–70× faster than SwiftData and ~7× faster than GRDB on insert.
-- **It's a trade-off you pick per entity:** depending on use case: add indexes to win reads (at higher write cost), or stay index-free to win writes (at the cost of linear scans). SwiftletModel also lets you choose the index *kind* — a `@HashIndex` (equality-only) is far cheaper to maintain than a comparable B-tree index.
+- **It's a trade-off you pick per entity** — add indexes to win reads (at higher write cost), or stay index-free to win writes (at the cost of linear scans). SwiftletModel also lets you choose the index *kind* — a `@HashIndex` (equality-only) is far cheaper to maintain than a comparable B-tree index.
 
 ### Relational retrieval (Northwind)
 
@@ -203,7 +203,7 @@ Graph traversal across related entities — SwiftletModel's design focus. `size`
 | orderInvoice (nav) | **6.36** | 11.14 | 225.40 |
 | invoices (bulk) | 321.50 | **64.07** | 2920.70 |
 
-- **Navigational traversal is home turf** — fetching an entity then hopping its graph is ~1.7× faster than hand-written FK-indexed SQL JOINs in GRDB and ~35× faster than SwiftData relations traversals.
+- **Navigational traversal is home turf** — fetching an entity then hopping its graph is ~1.7× faster than hand-written FK-indexed SQL JOINs in GRDB and ~35× faster than SwiftData's relationship traversal.
 - **Bulk denormalized dumps still go to SQL** — materializing one giant flattened table is what SQLite's join engine is built for.
 
 **Rule of thumb:** if you need to *traverse the graph and assemble a result* (navigational reads, point lookups, moderate fan-out), SwiftletModel wins. If you need to *dump a huge fully-denormalized table*, reach for SQL.
@@ -211,8 +211,6 @@ Graph traversal across related entities — SwiftletModel's design focus. `size`
 > M2 Pro, macOS, Release, in-memory, single run. Micro-benchmarks of a synthetic workload — use them to understand the engines' shapes, not as a single verdict. Full methodology, per-engine scaling curves, and instructions to reproduce are in the [benchmark repo](https://github.com/KazaiMazai/SwiftletModelPerformanceTestSuite).
 
 ## Table of Contents
-
-- [Performance](#performance)
 
 - [Model Definitions](#model-definitions)
 - [How to Save Entities](#how-to-save-entities)
@@ -232,7 +230,7 @@ Graph traversal across related entities — SwiftletModel's design focus. `size`
     + [Single Property Index](#single-property-index)
     + [Compound Index](#compound-index)
     + [Combining Sort and Filter](#combining-sort-and-filter)
-    + [Best Practises and Performance Considerations](#best-practises-and-performance-considerations)
+    + [Best Practices and Performance Considerations](#best-practices-and-performance-considerations)
 - [How to use Filter Queries](#how-to-use-filter-queries)
   * [Basic Filtering](#basic-filtering)
     + [Equality Filters](#equality-filters)
@@ -354,7 +352,6 @@ public protocol EntityModelProtocol {
     static func queryAll(with nested: Nested..., in context: Context) -> QueryList<Self>
          
     static func nestedQueryModifier(_ query: Query<Self>, in context: Context, nested: [Nested]) -> Query<Self>
-}
 }
 ```
 
@@ -679,7 +676,7 @@ let results = User.query()
 
 ```
 
-#### Best Practises and Performance Considerations
+#### Best Practices and Performance Considerations
 
 | Operation | Indexed | Not Indexed | Notes |
 |-----------|---------|-------------|--------|
