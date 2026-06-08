@@ -42,23 +42,26 @@ extension Unique.HashableValue {
                             in context: inout Context,
                             resolveCollisions resolver: CollisionResolver<Entity>) throws {
 
-        var index = Query(id: indexName).resolve(in: context) ?? Self(name: indexName)
-        try index.checkForCollisions(entity, value: value, in: &context, resolveCollisions: resolver)
-        index = index.query().resolve(in: context) ?? index
-        index.update(entity, value: value)
-        try index.save(to: &context)
+        /**
+         Resolve a read-only copy to check for collisions first: the resolver may re-entrantly
+         mutate the context (and this very index). Then apply the update in place, which re-reads
+         the (possibly resolver-updated) index from storage — replacing the old re-resolve dance.
+        */
+        try Query<Self>(id: indexName).resolve(in: context)?
+            .checkForCollisions(entity, value: value, in: &context, resolveCollisions: resolver)
+
+        context.mutate(indexName, default: { Self(name: indexName) }) { index in
+            index.update(entity, value: value)
+        }
     }
 
     static func removeFromIndex(indexName: String,
                                 _ entity: Entity,
                                 in context: inout Context) throws {
 
-        guard var index = Query<Self>(id: indexName).resolve(in: context) else {
-            return
+        context.mutateIfPresent(indexName) { (index: inout Self) in
+            index.remove(entity)
         }
-
-        index.remove(entity)
-        try index.save(to: &context)
     }
 }
 

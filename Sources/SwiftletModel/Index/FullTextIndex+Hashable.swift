@@ -82,22 +82,22 @@ extension FullTextIndex.HashableValue {
                             value: Value,
                             in context: inout Context) throws {
 
-        var index = Query(id: indexName).resolve(in: context) ?? Self(name: indexName)
-        index.update(entity, value: value)
-        try index.save(to: &context)
+        context.mutate(indexName, default: { Self(name: indexName) }) { index in
+            index.update(entity, value: value)
+        }
     }
 
     static func removeFromIndex(indexName: String,
                                 _ entity: Entity,
                                 in context: inout Context) throws {
 
-        var index = Query<Self>(id: indexName).resolve(in: context)
-        index?.remove(entity)
-        try index?.save(to: &context)
+        context.mutateIfPresent(indexName) { (index: inout Self) in
+            index.remove(entity)
+        }
     }
 }
 
-private  extension FullTextIndex.HashableValue {
+private extension FullTextIndex.HashableValue {
     mutating func update(_ entity: Entity,
                          value: Value) {
 
@@ -113,9 +113,7 @@ private  extension FullTextIndex.HashableValue {
 
         let tokens = makeTokens(for: value)
         tokens.forEach { token in
-            var ids = index[token] ?? []
-            ids.insert(entity.id)
-            index[token] = ids
+            index[token, default: []].insert(entity.id)
         }
 
         totalLengthSum += tokens.count
@@ -134,9 +132,10 @@ private  extension FullTextIndex.HashableValue {
             return
         }
         tokens.forEach { token in
-            var ids = index[token] ?? []
-            ids.remove(entity.id)
-            index[token] = ids.isEmpty ? nil : ids
+            index[token]?.remove(entity.id)
+            if index[token]?.isEmpty == true {
+                index[token] = nil
+            }
         }
         totalLengthSum -= valueLenghtsForEntities[entity.id] ?? 0
         entitiesCount -= 1
