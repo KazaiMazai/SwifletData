@@ -34,21 +34,18 @@ extension Index.HashableValue {
                             value: Value,
                             in context: inout Context) throws {
 
-        var index = Query(id: indexName).resolve(in: context) ?? Self(name: indexName)
-        index.update(entity, value: value)
-        try index.save(to: &context)
+        context.mutate(indexName, default: { Self(name: indexName) }) { index in
+            index.update(entity, value: value)
+        }
     }
 
     static func removeFromIndex(indexName: String,
                                 _ entity: Entity,
                                 in context: inout Context) throws {
 
-        guard var index = Query<Self>(id: indexName).resolve(in: context) else {
-            return
+        context.mutateIfPresent(indexName) { (index: inout Self) in
+            index.remove(entity)
         }
-
-        index.remove(entity)
-        try index.save(to: &context)
     }
 
     func find(_ value: Value) -> Set<Entity.ID> {
@@ -70,22 +67,21 @@ private extension Index.HashableValue {
             remove(entity)
         }
 
-        var entities = index[value] ?? []
-        entities.insert(entity.id)
-        index[value] = entities
+        index[value, default: []].insert(entity.id)
         indexedValues[entity.id] = value
     }
 
-    
     mutating func remove(_ entity: Entity) {
         guard let value = indexedValues[entity.id],
-              var ids = index[value]
+              index[value] != nil
         else {
             return
         }
 
         indexedValues[entity.id] = nil
-        ids.remove(entity.id)
-        index[value] = ids.isEmpty ? nil : ids
+        index[value]?.remove(entity.id)
+        if index[value]?.isEmpty == true {
+            index[value] = nil
+        }
     }
 }
