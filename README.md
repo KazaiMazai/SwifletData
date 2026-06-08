@@ -13,11 +13,13 @@
 *If CoreData broke up with legacy, embraced modern Swift, and married GraphQL — you'd get SwiftletModel.*
 
 > *SwiftletModel is what you wished SwiftData was — if it were reinvented from scratch.*  
-It gives you CoreData-level graph management power with plain Swift structs, in-memory speed, and zero boilerplate.
+It gives you CoreData-level graph management power with plain Swift structs, instant speed, and zero boilerplate.
 
 **Is it an ORM?** Not exactly. SwiftletModel isn’t a traditional ORM or database layer. It doesn’t abstract SQL or manage disk persistence.  
 
 Instead, it’s a type-safe, normalized, in-memory graph model engine — a place to merge, shape, and manage business entity data from multiple sources, effortlessly.
+
+⚡️ **And it's fast:** in-memory benchmarks show up to **20× faster reads** and up to **~50–70× faster writes** than SwiftData. [See the numbers ↓](#performance)
 
 ## Features
 
@@ -44,7 +46,7 @@ Although primarily in-memory, SwiftletModel’s data models are plain Codable st
 
 ---
  
-## 🚀 Quick Start
+## Quick Start
 
 Here's how to get started fast.
 
@@ -143,7 +145,7 @@ let json = try? JSONEncoder().encode(user)
 
 That’s it. You now have a type-safe, bidirectionally-linked, normalized in-memory model graph.
 
-## 🧠 Ideas Behind SwiftletModel
+## Ideas Behind SwiftletModel
 
 **SwiftletModel intentionally does not bundle persistence, observation, or reactive capabilities.**
 
@@ -166,7 +168,51 @@ This minimalistic design makes SwiftletModel an ideal foundational block, allowi
 Entities are plain `Codable` structs, easily composable with any backend, caching layer, sync mechanism, or persistent storage.
 This approach is a clear embodiment of **Functional Core, Imperative Shell**.
 
+## Performance
+
+SwiftletModel is an in-memory, value-type, indexed object graph — so for the workloads it's built for (point lookups, indexed filtering, and graph traversal) it is **dramatically faster than other disk-backed stores**, even when those run fully in-memory.
+
+The numbers below come from the [**SwiftletModelPerformanceTestSuite**](https://github.com/KazaiMazai/SwiftletModelPerformanceTestSuite) — open, reproducible benchmarks that pit SwiftletModel against SwiftData, Realm, GRDB, and SQLiteData on the same seeded dataset, all running purely in-memory (so the comparison is about each engine's data structures and query paths, not disk I/O).
+
+### Single-table operations at 10,000 rows
+
+Values are **avg ms** (lower is better); `Int` shown for typed reads. **Bold = fastest in row.**
+
+| Operation | SwiftletModel·idx | SwiftletModel | GRDB | SQLiteData | Realm | SwiftData |
+|---|--:|--:|--:|--:|--:|--:|
+| ID lookup | **0.00** | **0.00** | 0.03 | 0.04 | **0.00** | 0.06 |
+| equal | **0.23** | 6.44 | 0.71 | 0.56 | 0.42 | 4.63 |
+| not equal | **4.43** | 11.40 | 7.86 | 5.29 | 7.92 | 88.53 |
+| compare | **2.20** | 8.74 | 4.03 | 2.76 | 4.29 | 40.96 |
+| sort | 11.00 | 37.12 | 10.11 | **7.24** | 10.46 | 94.87 |
+| insert | 56.65 | **7.04** | 47.73 | 59.47 | 48.70 | 476.35 |
+| update | 121.70 | **7.17** | 102.50 | 152.05 | 7.48 | 369.03 |
+
+- **Indexed reads win across the board** — `ID lookup` is O(1), and query with `equal` predicate is ~20× faster than SwiftData.
+- **Unindexed writes are the fastest of any engine** — a pure keyed store doing zero index maintenance, ~50–70× faster than SwiftData and ~7× faster than GRDB on insert.
+- **It's a trade-off you pick per entity:** depending on use case: add indexes to win reads (at higher write cost), or stay index-free to win writes (at the cost of linear scans). SwiftletModel also lets you choose the index *kind* — a `@HashIndex` (equality-only) is far cheaper to maintain than a comparable B-tree index.
+
+### Relational retrieval (Northwind)
+
+Graph traversal across related entities — SwiftletModel's design focus. `size` is the order count. (avg ms, **bold = fastest**)
+
+| Workload | Swiftlet (10k) | GRDB (10k) | SwiftData (10k) |
+|---|--:|--:|--:|
+| productsByCat | **0.06** | **0.06** | 4.09 |
+| orderDetailsExt | **18.38** | 31.22 | 673.54 |
+| orderInvoice (nav) | **6.36** | 11.14 | 225.40 |
+| invoices (bulk) | 321.50 | **64.07** | 2920.70 |
+
+- **Navigational traversal is home turf** — fetching an entity then hopping its graph is ~1.7× faster than hand-written FK-indexed SQL JOINs in GRDB and ~35× faster than SwiftData relations traversals.
+- **Bulk denormalized dumps still go to SQL** — materializing one giant flattened table is what SQLite's join engine is built for.
+
+**Rule of thumb:** if you need to *traverse the graph and assemble a result* (navigational reads, point lookups, moderate fan-out), SwiftletModel wins. If you need to *dump a huge fully-denormalized table*, reach for SQL.
+
+> M2 Pro, macOS, Release, in-memory, single run. Micro-benchmarks of a synthetic workload — use them to understand the engines' shapes, not as a single verdict. Full methodology, per-engine scaling curves, and instructions to reproduce are in the [benchmark repo](https://github.com/KazaiMazai/SwiftletModelPerformanceTestSuite).
+
 ## Table of Contents
+
+- [Performance](#performance)
 
 - [Model Definitions](#model-definitions)
 - [How to Save Entities](#how-to-save-entities)
