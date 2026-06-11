@@ -8,7 +8,7 @@
 import Foundation
 
 @propertyWrapper
-public struct Unique<Entity: EntityModelProtocol>: Sendable, Omitable {
+public struct Unique<Entity: EntityModelProtocol>: Sendable, OmittableFromCoding, OmittableFromHashing {
     public var wrappedValue: Never.Type? { nil }
 
     public init(wrappedValue: Never.Type?) { }
