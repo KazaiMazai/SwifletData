@@ -8,7 +8,7 @@
 import Foundation
 
 @propertyWrapper
-public struct FullTextIndex<Entity: EntityModelProtocol>: Sendable, OmitableFromCoding {
+public struct FullTextIndex<Entity: EntityModelProtocol>: Sendable, Omitable {
     public var wrappedValue: Never.Type? { nil }
 
     public init(wrappedValue: Never.Type?) { }
