@@ -8,7 +8,7 @@
 import Foundation
 
 @propertyWrapper
-public struct Index<Entity: EntityModelProtocol>: Sendable, OmitableFromCoding {
+public struct Index<Entity: EntityModelProtocol>: Sendable, OmittableFromCoding, OmittableFromHashing {
     public var wrappedValue: Never.Type? { nil }
 
     public init(wrappedValue: Never.Type?) { }
