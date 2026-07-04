@@ -18,6 +18,10 @@ public extension Context {
     func ids<T: EntityModelProtocol>(_ entityType: T.Type) -> [T.ID] {
         entitiesRepository.ids(T.self)
     }
+    
+    func count<T: EntityModelProtocol>(_ entityType: T.Type) -> Int {
+        entitiesRepository.count(T.self)
+    }
 
     func all<T: EntityModelProtocol>() -> [T] {
         entitiesRepository.all()
