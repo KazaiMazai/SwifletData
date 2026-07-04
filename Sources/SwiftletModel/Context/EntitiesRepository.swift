@@ -35,6 +35,11 @@ extension EntitiesRepository {
         guard let storage = storage(T.self) else { return [] }
         return Array(storage.entities.values)
     }
+    
+    func count<T: EntityModelProtocol>(_ entityType: T.Type) -> Int {
+        guard let storage = storage(T.self) else { return .zero }
+        return storage.entities.count
+    }
 
     func find<T: EntityModelProtocol>(_ id: T.ID) -> T? {
         storage(T.self)?.entities[id]
